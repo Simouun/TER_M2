@@ -8,9 +8,11 @@ mu =
 b = randint(0,1)
 #anneau pour RLWE
 R.<x> = PolynomialRing(GF(2))
+f = x^d + 1
+R = P.quotient(f)
 
 d = power of 2
-f = x^d + 1
+
 q = 
 
 #distribution gaussienne
