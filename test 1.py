@@ -7,7 +7,7 @@ mu =
 #bit entre 0 et 1 pour LWE ou RLWE
 b = randint(0,1)
 #anneau pour RLWE
-R.<x> = PolynomialRing(GF(2))
+P.<x> = PolynomialRing(GF(2))
 f = x^d + 1
 R = P.quotient(f)
 
