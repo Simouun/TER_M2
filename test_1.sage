@@ -1,3 +1,5 @@
+reset()
+
 from sage.stats.distributions.discrete_gaussian_integer import DiscreteGaussianDistributionIntegerSampler
 from sage.stats.distributions.discrete_gaussian_polynomial import DiscreteGaussianDistributionPolynomialSampler
 """
@@ -17,6 +19,8 @@ sigma = 1
 X = RealDistribution('gaussian', sigma)
 """
 
+
+
 class E_Basic:
 
     def __init__(this, l, mu):
@@ -25,19 +29,31 @@ class E_Basic:
         n = 1
         N = ceil((2*n + 1)*log(q))"""
         this.N = 3*mu
-        this.q = random_prime(2^(this.mu - 1),2^this.mu - 1)
+        this.q = random_prime(2^this.mu - 1, lbound=2^(this.mu - 1))
         this.d = 2^l
         #this.X = RealDistribution('gaussian', 3.2)
         P2.<x> = PolynomialRing(GF(2))
         this.R2 = P2.quotient(x^this.d+1)
         Pq.<x> = PolynomialRing(GF(this.q))
         this.Rq = Pq.quotient(x^this.d+1)
-        this.X = DiscreteGaussianDistributionPolynomialSampler(this.Rq, this.d+1, 3.2)
+        
+    def X(this):
+        sigma=3.2
+        d=DiscreteGaussianDistributionIntegerSampler(sigma, this.q/4 )
+        """
+        def d_adjust():
+            n = d()
+            while n > floor(this.q/2) or n < 0:
+                n = d()
+            return n"""
+            
+        return this.Rq([d() for _ in xrange(this.d) ])
 
     def secretKeyGen(this):
         #return [1, this.X.get_random_element()]
         return vector(this.Rq, [1,this.X()])
     
+
     def publicKeyGen(this, sk):
         AA = random_vector(this.Rq, this.N)
         e = vector(this.Rq, this.N)
@@ -63,8 +79,8 @@ class E_Basic:
         #return Mod(Mod((c.dot_product(sk)),this.q),2)
         return this.R2(c.dot_product(sk).list())
     
-S = E_Basic(5,5)
-
+S = E_Basic(5,7)
+this =S
 sk = S.secretKeyGen()
 
 pk = S.publicKeyGen(sk)
