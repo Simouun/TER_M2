@@ -1,21 +1,6 @@
 from sage.stats.distributions.discrete_gaussian_integer import DiscreteGaussianDistributionIntegerSampler
 from sage.stats.distributions.discrete_gaussian_polynomial import DiscreteGaussianDistributionPolynomialSampler
-"""
-#taille de q
-#mu =
-#bit entre 0 et 1 pour LWE ou RLWE
-b = r
-#anneau pour RLWE
-P.<x> = PolynomialRing(GF(2))
-f = x^d + 1
-R = P.quotient(f)
 
-#d = power of 2
-
-#distribution gaussienne
-sigma = 1
-X = RealDistribution('gaussian', sigma)
-"""
 
 class E_Basic:
 
