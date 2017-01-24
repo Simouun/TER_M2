@@ -17,7 +17,7 @@ class E_Basic:
         this.R2 = P2.quotient(x^this.d+1)
         Pq.<x> = PolynomialRing(GF(this.q))
         this.Rq = Pq.quotient(x^this.d+1)
-        this.X = DiscreteGaussianDistributionPolynomialSampler(this.Rq, this.d+1, 3.2)
+        this.X = DiscreteGaussianDistributionPolynomialSampler(this.Rq, this.d+1, 0.2)
 
     def secretKeyGen(this):
         #return [1, this.X.get_random_element()]
@@ -48,19 +48,20 @@ class E_Basic:
         #return Mod(Mod((c.dot_product(sk)),this.q),2)
         return this.R2(c.dot_product(sk).list())
     
-S = E_Basic(5,5)
+S = E_Basic(5,10)
 
 sk = S.secretKeyGen()
 
 pk = S.publicKeyGen(sk)
 
-mo = S.R2.random_element()
+mo = S.R2.random_element() 
 
 c = S.enc(pk,mo)
 
 m = S.dec(sk,c)
 
-print m == mo
-
+print "\non doit retrouver mo = ",mo
+print "\ntest m == mo : ", m == mo
+print "\non trouve bien m =", m
 
 
