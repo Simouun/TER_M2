@@ -22,7 +22,7 @@ class BasicScheme:
         N = ceil((2*n + 1)*log(q))"""
         self.N = 3*mu
 
-        self.q = random_prime(2^(self.mu - 1),2^self.mu - 1)
+        self.q = random_prime(2^self.mu - 1, lbound=2^(self.mu - 1))
         self.d = 2^_lambda
         P2.<x> = PolynomialRing(GF(2))
         self.R2 = P2.quotient(x^self.d+1)
@@ -35,7 +35,7 @@ class BasicScheme:
         :return: random Rq element, with (infinite) norm lower that q/2
         """
         sigma=3.2
-        d=DiscreteGaussianDistributionIntegerSampler(sigma, self.q/4 )
+        d=DiscreteGaussianDistributionIntegerSampler(sigma, self.q/4, floor(self.q/(2*sigma)) )
         return self.Rq([d() for _ in xrange(self.d) ])
 
 
