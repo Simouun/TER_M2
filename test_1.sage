@@ -3,7 +3,8 @@ reset()
 from sage.stats.distributions.discrete_gaussian_integer import DiscreteGaussianDistributionIntegerSampler
 
 
-
+def log(x):
+    return log(x, 2)
 
 class BasicScheme:
 
@@ -65,6 +66,32 @@ class BasicScheme:
 
     def dec(self, sk, c):
         return self.R2(c.dot_product(sk).list())
+
+
+    def bit_decomp(self, x):
+        # type: (self.Rq^n) -> (self.R2^n)^self.q.bit_length())
+        """
+        decompose a vector x of n elements from Rq to a vector of mu(=q's bit length) elements u_j in R2^n such that:
+        sum{2^j*u_j} = x
+        :returns a vector of vectors of R2
+        """
+        def decomp_one(poly):
+            ret = [[]] * self.mu
+            for coeff in poly.list():
+                for i in xrange(self.mu):
+                    ret[i].append(coeff % 2)
+                    coeff >>= 1
+
+            return map(self.R2, ret)
+
+        return vector(map(vector, matrix(map(decomp_one, x)).columns()))
+
+    def powers_of_2(self, x):
+        # type: (self.Rq^n) -> (self.Rq^n)^self.q.bit_length()*n
+        """
+        :returns the powers of 2 of an Rq^n vector, as a vector of vectors of Rq
+        """
+        return vector([x*2^j for j in xrange(self.mu)])
     
 S = BasicScheme(5,7)
 self =S
@@ -83,5 +110,39 @@ print "\non doit retrouver plaintext mo = ",mo
 print "\ntest m == mo : ", m == mo
 if m == mo:
     print "\non trouve bien m =", m
+
+class FHE():
+    def __init__(self, _lambda, L):
+        mu = log(L) + log(_lambda)
+        self.L = L
+        self.bases = []
+        for j in xrange(L):
+            self.bases.append(BasicScheme(_lambda, mu*(j+1)))
+
+    def keygen(self):
+        pk = []
+        sk = []
+        for i in xrange(len(self.bases)):
+            scheme = self.bases[i]
+
+            sk_i =scheme.secret_keygen()
+            pk_i = scheme.public_keygen(sk)
+            sk_i_tensor_decomp = vector(scheme.Rq, scheme.bit_decomp((1, sk_i, sk_i, sk_i^2)))
+
+            hint_i = scheme.public_keygen(s2,len(s1)*mu)
+            hint_i[:,1] += scheme.powers_of_2(s1)
+
+            pk.append((pk_i,hint_i))
+            sk.append(sk_i)
+
+
+    def switch_key_gen(self, s1, s2):
+        A=self.public_key_gen(s1)
+
+    def enc(self, pk, m):
+        return self.bases[-1].enc(pk, m)
+
+    def dec(self, sk, c):
+        pass
 
 
