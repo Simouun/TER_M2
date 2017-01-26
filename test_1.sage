@@ -12,7 +12,7 @@ class BasicScheme:
         """
         represents one instance of the basic cryptosystem
         :param _lambda: security parameter
-        :param mu: modulus size
+        :param mu: modulus size (in bits)
         self.q is the modulus
         self.d the ring dimension
         self.Rn is the ring of polynomials with coefficients in Z/nZ modulo f=x^d+1
@@ -43,16 +43,17 @@ class BasicScheme:
 
     def secret_key_gen(self):
         return vector(self.Rq, [1,self.X()])
-    
-    def public_key_gen(self, sk):
-        AA = random_vector(self.Rq, self.N)
-        e = vector(self.Rq, self.N)
-        for i in xrange(self.N):
+
+    #key_size can be specified for key switch setup
+    def public_key_gen(self, sk, key_size=self.N):
+        AA = random_vector(self.Rq, key_size)
+        e = vector(self.Rq, key_size)
+        for i in xrange(key_size):
             e[i] = self.X()
         b = AA*sk[1] + 2*e
 
-        pk = matrix(self.Rq, self.N, 2)
-        for i in xrange(self.N):
+        pk = matrix(self.Rq, key_size, 2)
+        for i in xrange(key_size):
             pk[i,0] = b[i]
             pk[i,1] = -AA[i]
             
@@ -69,11 +70,11 @@ class BasicScheme:
 
 
     def bit_decomp(self, x):
-        # type: (self.Rq^n) -> (self.R2^n)^self.q.bit_length())
+        # type: (self.Rq^len(x)) -> self.R2^(len(x)*self.q.bit_length())
         """
-        decompose a vector x of n elements from Rq to a vector of mu(=q's bit length) elements u_j in R2^n such that:
-        sum{2^j*u_j} = x
-        :returns a vector of vectors of R2
+        decompose a vector x of n elements from Rq to a vector of n*mu elements u_ij in R2 such that:
+        sum_j{2^j*u_ij} = x_i (for all i in range(n))
+        :returns a vector of R2
         """
         def decomp_one(poly):
             ret = [[]] * self.mu
@@ -84,18 +85,39 @@ class BasicScheme:
 
             return map(self.R2, ret)
 
-        return vector(map(vector, matrix(map(decomp_one, x)).columns()))
+        # the matrix has the elements we want in the right place.
+        # we convert it to a big vector of all columns concatenated.
+        return  vector(sum(map(list, matrix(map(decomp_one, x)).columns()), []))
 
     def powers_of_2(self, x):
-        # type: (self.Rq^n) -> (self.Rq^n)^self.q.bit_length()*n
+        # type: (self.Rq^len(x)) -> self.Rq^(len(x)*self.q.bit_length())
         """
-        :returns the powers of 2 of an Rq^n vector, as a vector of vectors of Rq
+        :returns the mu powers of 2 of an Rq^n vector, as a Rq^(n*mu) vector
         """
-        return vector([x*2^j for j in xrange(self.mu)])
-    
+        return vector([x[i]*2^j for j in xrange(self.mu) for i in xrange(len(x))])
+
+    def switch_key_gen(self, s1,s2):
+        hint = self.public_key_gen(s2, len(s1)*self.mu)
+        hint[0,:] += self.powers_of_2(s1)
+        return hint
+
+#TODO: check this
+def scale(x, q, p, r=2):
+    scale = p/q
+    ret = []
+    for poly in x:
+        scaled_poly = []
+        for coef in poly.list():
+            scaled = round(coef*scale)
+            scaled += ((scaled % r) -( coef % r))
+            scaled_poly.append(scaled)
+        ret.append(poly.parent()(scaled_poly))
+
+    return vector(ret)
+
 S = BasicScheme(5,7)
 self =S
-
+[]
 sk = S.secret_key_gen()
 
 pk = S.public_key_gen(sk)
@@ -116,33 +138,30 @@ class FHE():
         mu = log(L) + log(_lambda)
         self.L = L
         self.bases = []
-        for j in xrange(L):
+        for j in reversed(xrange(L)):
             self.bases.append(BasicScheme(_lambda, mu*(j+1)))
 
-    def keygen(self):
+    def key_gen(self):
         pk = []
         sk = []
-        for i in xrange(len(self.bases)):
-            scheme = self.bases[i]
+        for j in xrange(len(self.bases)):
+            scheme = self.bases[j]
 
-            sk_i =scheme.secret_keygen()
-            pk_i = scheme.public_keygen(sk)
-            sk_i_tensor_decomp = vector(scheme.Rq, scheme.bit_decomp((1, sk_i, sk_i, sk_i^2)))
+            sk_j =scheme.secret_keygen()
+            pk_j = scheme.public_keygen(sk)
 
-            hint_i = scheme.public_keygen(s2,len(s1)*mu)
-            hint_i[:,1] += scheme.powers_of_2(s1)
+            sk_j_tensor_decomp = vector(scheme.Rq, scheme.bit_decomp((scheme.Rq(1), sk_j, sk_j, sk_j^2)))
+            hint_j = scheme.switch_key_gen(sk_j_tensor_decomp, sk[-1]) if j != len(self.bases)-1 else None
 
-            pk.append((pk_i,hint_i))
-            sk.append(sk_i)
+            pk.append((pk_j,hint_j))
+            sk.append(sk_j)
 
-
-    def switch_key_gen(self, s1, s2):
-        A=self.public_key_gen(s1)
+        return pk, sk
 
     def enc(self, pk, m):
         return self.bases[-1].enc(pk, m)
 
-    def dec(self, sk, c):
-        pass
-
+    #todo: pack the ciphertext and its level
+    def dec(self, sk, c, j):
+        return self.bases[j].dec(sk[j], c)
 
