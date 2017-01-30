@@ -3,7 +3,7 @@ reset()
 
 # Séparation de l'implémentation et des tests
 
-from FHE import *
+load("FHE.sage")
 
 S = BasicScheme(5, 7)
 self = S

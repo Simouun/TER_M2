@@ -110,6 +110,9 @@ class BasicScheme:
         hint[:, 0] += self.powers_of_2(s1)
         return hint
 
+    def switch_key(self, c, hint):
+        return  self.bit_decomp(c).transpose()*hint
+
 
 # TODO: check this
 def scale(x, q, p, r=2):
@@ -118,9 +121,9 @@ def scale(x, q, p, r=2):
     for poly in x:
         scaled_poly = []
         for coef in poly.list():
-            scaled = round(coef * scale)
-            scaled += ((scaled % r) - (coef % r))
-            scaled_poly.append(scaled)
+            scaled = coef*scale
+            scaled_poly.append(scaled - scaled%r + coef%r)
+
         ret.append(poly.parent()(scaled_poly))
 
     return vector(ret)
@@ -132,22 +135,22 @@ class FHE:
         mu = log(L) + log(_lambda)
         self.L = L
         self.bases = []
-        for j in reversed(xrange(L)):
+        for j in reversed(xrange(L+1)):
             self.bases.append(BasicScheme(_lambda, mu * (j + 1)))
 
     def key_gen(self):
         pk = []
         sk = []
-        for j in xrange(len(self.bases)):
+        for j in reversed(xrange(len(self.bases))):
             scheme = self.bases[j]
 
             sk_j = scheme.secret_keygen()
             pk_j = scheme.public_keygen(sk)
 
             sk_j_tensor_decomp = vector(scheme.Rq, scheme.bit_decomp((scheme.Rq(1), sk_j, sk_j, sk_j ^ 2)))
-            hint_j = scheme.switch_key_gen(sk_j_tensor_decomp, sk[-1]) if j != len(self.bases) - 1 else None
+            hint_j = scheme.switch_key_gen(sk_j_tensor_decomp, sk[-1]) if j != self.L else None
 
-            pk.append((pk_j, hint_j))
+            pk.append({"pk":pk_j, "hint":hint_j})
             sk.append(sk_j)
 
         return pk, sk
@@ -159,4 +162,16 @@ class FHE:
     def dec(self, sk, c, j):
         return self.bases[j].dec(sk[j], c)
 
+    def add(self, pk, c1, c2, j):
+        return  self.refresh(pk, c1+c2, j)
+
+    #todo
+    def mult(self, pk, c1, c2, j):
+        pass
+
+    def refresh(self, pk, c, j):
+        c1 = self.bases[j].powers_of_2(c1)
+        c2 = scale(c1, self.bases[j].q, self.bases[j-1].q)
+        c3 = self.bases[j-1].switch_key(c2, pk[j-1]["hint"])
+        return c3
 
