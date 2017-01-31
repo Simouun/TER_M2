@@ -11,6 +11,11 @@ from sage.stats.distributions.discrete_gaussian_integer import DiscreteGaussianD
 # Je vois pas trop quoi y faire, vu que normalement vu que la gaussienne est centrée en 0, la somme devrait en rester proche.
 # Mais on voit bien le pb si on s'amuse a affiche incrémentalement la somme d'entiers générés, même si chacun est en gros entre -3 et 3,
 # on peut en quelques itérations atteindre 20,30, voir 100.
+#
+# update (lundi 30): en tout cas le schéma de base marche si on augmente la taille de q (à partir de ~15 bits ca marche toujours)
+# peut être que c'est lié au fait que HElib utilise une variante plus opti...
+# par contre j'ai pas testé l'influence de lambda, mais la mauvaise nouvelle c'est que si on l'augment ça doit foutre le bordel très vite
+# ça vient du fait que notre produit de polynôme e_i*r_i sort un polynôme  dont chaque coef est une somme avec un nombre linéaire en d=2^lambda de termes
 
 def log(x):
     return log(x, 2)
@@ -45,18 +50,20 @@ class BasicScheme:
         :return: random Rq element, with (infinite) norm lower that q/2
         """
         sigma = 3.2
-        d = DiscreteGaussianDistributionIntegerSampler(sigma, 0, 1)  # , floor(self.q/(2*sigma)) )
+        d = DiscreteGaussianDistributionIntegerSampler(sigma, 0)  # , floor(self.q/(2*sigma)) )
         return self.Rq([d() for _ in xrange(self.d)])
 
     def secret_key_gen(self):
         return vector(self.Rq, [1, self.X()])
 
+    # TODO: what do when sk is not [1,s'] ? (we have ciphertexts which are valid under bigger keys, for which we need to generate public keys before switching)
     # key_size can be specified for key switch setup, otherwise, the scheme's parameter is used
     def public_key_gen(self, sk, key_size=None):
+        # type: (self.Rq^2, int) -> matrix(self.Rq, key_size, 2)
         if key_size == None:
             key_size = self.N
         AA = random_vector(self.Rq, key_size)
-        e = vector(self.Rq, [self.X()]*key_size)
+        e = vector(self.Rq, [self.X() for _ in xrange(key_size)])
 
         pk = matrix(self.Rq, key_size, 2)
         pk[:,0] = AA * sk[1] + 2 * e
@@ -65,11 +72,13 @@ class BasicScheme:
         return pk
 
     def enc(self, pk, m):
+        # type: (matrix(self.Rq, self.N, 2), self.R2) -> self.Rq^2
         # r is an random R2 vector, seen as a Rq vector
         r = vector(self.Rq, map(lambda x: x.list(), random_vector(self.R2, self.N)))
         return vector(self.Rq, [self.R2(m).list(), 0]) + (pk.transpose() * r)
 
     def dec(self, sk, c):
+        # type: (self.Rq^2, self.Rq^2) -> self.R2
         def center_repr(coeff):
             if int(coeff) < self.q / 2:
                 return int(coeff)
@@ -106,11 +115,17 @@ class BasicScheme:
         return vector([x[i] * 2 ^ j for j in xrange(self.mu) for i in xrange(len(x))])
 
     def switch_key_gen(self, s1, s2):
+        # type: (self.Rq^len(s1), self.Rq^len(s2)) -> matrix(self.Rq, len(s1)*self.q.bit_length(), 2)
+        """
+        generate hint to be used later by switch_key() procedure to switch a ciphertext to key s1 to key s2.
+        Here the keys may not directly come from priavet_key_gen(), ie. s1 is
+        """
         hint = self.public_key_gen(s2, len(s1) * self.mu)
         hint[:, 0] += self.powers_of_2(s1)
         return hint
 
     def switch_key(self, c, hint):
+        # type: (self.Rq^len(c), matrix(self.Rq, len(c)*self.q.bit_length(), hint.ncols())) -> self.Rq^hint.ncols()
         return  self.bit_decomp(c).transpose()*hint
 
 
@@ -147,8 +162,10 @@ class FHE:
             sk_j = scheme.secret_keygen()
             pk_j = scheme.public_keygen(sk)
 
-            sk_j_tensor_decomp = vector(scheme.Rq, scheme.bit_decomp((scheme.Rq(1), sk_j, sk_j, sk_j ^ 2)))
-            hint_j = scheme.switch_key_gen(sk_j_tensor_decomp, sk[-1]) if j != self.L else None
+            hint_j = None
+            if j != self:
+                sk_j_decomp = scheme.bit_decomp((scheme.Rq(1), sk_j, sk_j, sk_j ^ 2))
+                hint_j = scheme.switch_key_gen(vector(scheme.Rq, sk_j_decomp.list()), sk[-1])
 
             pk.append({"pk":pk_j, "hint":hint_j})
             sk.append(sk_j)

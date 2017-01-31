@@ -5,7 +5,7 @@ reset()
 
 load("FHE.sage")
 
-S = BasicScheme(5, 7)
+S = BasicScheme(5, 20)
 self = S
 
 sk = S.secret_key_gen()
