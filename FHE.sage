@@ -20,6 +20,10 @@ from sage.stats.distributions.discrete_gaussian_integer import DiscreteGaussianD
 def log(x):
     return log(x, 2)
 
+def Rq(d, q):
+    Pq.<x> = PolynomialRing(GF(q))
+    return Pq.quotient(x^d + 1)
+
 
 class BasicScheme:
     def __init__(self, _lambda, mu):
@@ -39,24 +43,21 @@ class BasicScheme:
 
         self.q = random_prime(2^self.mu - 1, lbound=2^(self.mu - 1))
         self.d = 2^_lambda
-        P2.<x> = PolynomialRing(GF(2))
-        self.R2 = P2.quotient(x^self.d+1)
-        Pq.<x> = PolynomialRing(GF(self.q))
-        self.Rq = Pq.quotient(x^self.d+1)
+        self.R2 = Rq(self.d, self.q)
+        self.Rq = Rq(self.d, 2)
 
     def X(self):
         """
         noise generator, from gaussian distribution
         :return: random Rq element, with (infinite) norm lower that q/2
         """
-        sigma = 3.2
-        d = DiscreteGaussianDistributionIntegerSampler(sigma, 0)  # , floor(self.q/(2*sigma)) )
+        d = DiscreteGaussianDistributionIntegerSampler(3.2, 0)  # , floor(self.q/(2*sigma)) )
         return self.Rq([d() for _ in xrange(self.d)])
 
     def secret_key_gen(self):
         return vector(self.Rq, [1, self.X()])
 
-    # TODO: what do when sk is not [1,s'] ? (we have ciphertexts which are valid under bigger keys, for which we need to generate public keys before switching)
+
     # key_size can be specified for key switch setup, otherwise, the scheme's parameter is used
     def public_key_gen(self, sk, key_size=None):
         # type: (self.Rq^2, int) -> matrix(self.Rq, key_size, 2)
@@ -114,14 +115,16 @@ class BasicScheme:
         """
         return vector([x[i] * 2 ^ j for j in xrange(self.mu) for i in xrange(len(x))])
 
-    def switch_key_gen(self, s1, s2):
-        # type: (self.Rq^len(s1), self.Rq^len(s2)) -> matrix(self.Rq, len(s1)*self.q.bit_length(), 2)
+    # important: sk2 has to be a 'canonical' dimension 2 key = [1,s']
+    def switch_key_gen(self, sk1, sk2):
+        # type: (self.Rq^len(sk1), self.Rq^2) -> matrix(self.Rq, len(sk1)*self.q.bit_length(), 2)
         """
-        generate hint to be used later by switch_key() procedure to switch a ciphertext to key s1 to key s2.
-        Here the keys may not directly come from priavet_key_gen(), ie. s1 is
+        generate hint to be used later by switch_key() procedure to switch a ciphertext to key sk1 to key sk2.
+        Here the sk1 may not directly come from private_key_gen(), ie. sk1 = sk' tensor sk'
+        sk2 however MUST not be modified (ie. sk2 = private_key_gen())
         """
-        hint = self.public_key_gen(s2, len(s1) * self.mu)
-        hint[:, 0] += self.powers_of_2(s1)
+        hint = self.public_key_gen(sk2, len(sk1) * self.mu)
+        hint[:, 0] += self.powers_of_2(sk1)
         return hint
 
     def switch_key(self, c, hint):
@@ -131,6 +134,14 @@ class BasicScheme:
 
 # TODO: check this
 def scale(x, q, p, r=2):
+    """
+    Scale a vector while preserving mod-r congruency
+    :param x: the mod q vector to be scaled
+    :param q: the modulus of x's elements
+    :param p: the target modulus
+    :param r: the congruency modulus to be preserved
+    :returns: the closest to x mod-p vector congruent to x mod r
+    """
     scale = p / q
     ret = []
     for poly in x:
@@ -154,21 +165,30 @@ class FHE:
             self.bases.append(BasicScheme(_lambda, mu * (j + 1)))
 
     def key_gen(self):
+        """
+        Generate the public and privates keys, as two arrays of BasicScheme's public and private keys,
+        plus the key switching hints.
+        hint_j allow to switch from the (modified) sk_j to the (original) sk_{j-1}
+        :returns: [ {"pk": pk_j, "hint": hint_j} ], [ sk_j ]
+        """
         pk = []
         sk = []
         for j in reversed(xrange(len(self.bases))):
             scheme = self.bases[j]
 
-            sk_j = scheme.secret_keygen()
-            pk_j = scheme.public_keygen(sk)
+            sk = scheme.secret_keygen()
+            pk = scheme.public_keygen(sk)
 
-            hint_j = None
-            if j != self:
-                sk_j_decomp = scheme.bit_decomp((scheme.Rq(1), sk_j, sk_j, sk_j ^ 2))
-                hint_j = scheme.switch_key_gen(vector(scheme.Rq, sk_j_decomp.list()), sk[-1])
+            if j != self.L:
+                # note : we don't use exactly the tensor product sk * sk, because with RLWE instantiation we know that
+                # sk is of dimension 2. Therefore, we can remove the redundant coef (= sk) and set the multiplied
+                # ciphertext vector accordingly (see mult() )
+                sk_decomp = scheme.bit_decomp((scheme.Rq(1), sk[-1], sk[-1] ^ 2))
+                prev_hint = scheme.switch_key_gen(vector(scheme.Rq, sk_decomp.list()), sk)
+                pk[-1]["hint"] = prev_hint
 
-            pk.append({"pk":pk_j, "hint":hint_j})
-            sk.append(sk_j)
+            pk.append({"pk":pk})
+            sk.append(sk)
 
         return pk, sk
 
@@ -182,13 +202,18 @@ class FHE:
     def add(self, pk, c1, c2, j):
         return  self.refresh(pk, c1+c2, j)
 
-    #todo
+
     def mult(self, pk, c1, c2, j):
-        pass
+        # Here c3 has only dimension 3 (instead of 4) because the middle coef will be multiplied by the same factor (= sk)
+        # So the addition is done beforehand, in here, and we use it as a unique coef
+        c3 = vector([c1[0]*c2[0], c1[0]*c2[1] + c1[1]*c2[0], c1[1]*c2[1]])
+        return self.refresh(pk, c3, j)
 
     def refresh(self, pk, c, j):
-        c1 = self.bases[j].powers_of_2(c1)
+        c1 = self.bases[j].powers_of_2(c)
         c2 = scale(c1, self.bases[j].q, self.bases[j-1].q)
         c3 = self.bases[j-1].switch_key(c2, pk[j-1]["hint"])
         return c3
+
+
 
