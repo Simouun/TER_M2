@@ -2,8 +2,7 @@
 reset()
 
 # Séparation de l'implémentation et des tests
-
-load("FHE.sage")
+load("secure_context.sage")
 
 S = BasicScheme(5, 20)
 self = S
@@ -22,3 +21,6 @@ print "\non doit retrouver plaintext mo = ", mo
 print "\ntest m == mo : ", m == mo
 if m == mo:
     print "\non trouve bien m =", m
+
+with SecuredContext(5, 2^20) as CipherText, sk:
+
