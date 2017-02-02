@@ -96,16 +96,39 @@ class BasicScheme:
         :returns a vector of R2
         """
 
+        
+        def binary(n,mu):
+            liste = []
+            for i in xrange(len(bin(n))-2):
+                liste = [Mod(n,2)] + liste
+                n = n//2
+            while len(liste) < mu:
+                liste = [0] + liste
+            return liste
+
+        def decomp_two(poly):
+            ret = [[]] * self.mu
+            lbc = [] #list bin coeff : list des coeff en binaire
+            for coeff in poly.list():
+                lbc = [binary(lift(coeff),self.mu)] + lbc
+                
+            for i in xrange(self.mu):
+                ret[i] = [lbc[j][i] for j in xrange(len(lbc))]
+                ret[i].reverse()
+            ret.reverse()
+            return map(self.Rq, ret)
+            
         def decomp_one(poly):
             ret = [[]] * self.mu
+            print poly.list()
             for coeff in poly.list():
                 coeff = int(coeff)
                 for i in xrange(self.mu):
-                    ret[i].append(coeff % 2)
+                    ret[i].append(coeff % 2**i)
                     coeff >>= 1
 
             return map(self.R2, ret)
-
+        
         # the matrix has the elements we want in the right place.
         # we convert it to a big vector of all columns concatenated.
         return vector(sum(map(list, matrix(map(decomp_one, x)).columns()), []))
@@ -215,6 +238,8 @@ class FHE:
         c2 = scale(c1, self.bases[j].q, self.bases[j-1].q)
         c3 = self.bases[j-1].switch_key(c2, pk[j-1]["hint"])
         return c3
+
+
 
 
 
