@@ -17,8 +17,9 @@ from sage.stats.distributions.discrete_gaussian_integer import DiscreteGaussianD
 # par contre j'ai pas testé l'influence de lambda, mais la mauvaise nouvelle c'est que si on l'augment ça doit foutre le bordel très vite
 # ça vient du fait que notre produit de polynôme e_i*r_i sort un polynôme  dont chaque coef est une somme avec un nombre linéaire en d=2^lambda de termes
 
+oldlog = log
 def log(x):
-    return log(x, 2)
+    return oldlog(x, 2)
 
 def Rq(d, q):
     Pq.<x> = PolynomialRing(GF(q))
@@ -43,8 +44,8 @@ class BasicScheme:
 
         self.q = random_prime(2^self.mu - 1, lbound=2^(self.mu - 1))
         self.d = 2^_lambda
-        self.R2 = Rq(self.d, self.q)
-        self.Rq = Rq(self.d, 2)
+        self.R2 = Rq(self.d, 2)
+        self.Rq = Rq(self.d, self.q)
 
     def X(self):
         """
@@ -98,6 +99,7 @@ class BasicScheme:
         def decomp_one(poly):
             ret = [[]] * self.mu
             for coeff in poly.list():
+                coeff = int(coeff)
                 for i in xrange(self.mu):
                     ret[i].append(coeff % 2)
                     coeff >>= 1
@@ -158,7 +160,7 @@ def scale(x, q, p, r=2):
 
 class FHE:
     def __init__(self, _lambda, L):
-        mu = log(L) + log(_lambda)
+        mu = round(log(L) + log(_lambda))
         self.L = L
         self.bases = []
         for j in reversed(xrange(L+1)):
@@ -176,24 +178,23 @@ class FHE:
         for j in reversed(xrange(len(self.bases))):
             scheme = self.bases[j]
 
-            sk = scheme.secret_keygen()
-            pk = scheme.public_keygen(sk)
+            cur_sk = scheme.secret_key_gen()
+            cur_pk = scheme.public_key_gen(cur_sk)
 
             if j != self.L:
                 # note : we don't use exactly the tensor product sk * sk, because with RLWE instantiation we know that
                 # sk is of dimension 2. Therefore, we can remove the redundant coef (= sk) and set the multiplied
                 # ciphertext vector accordingly (see mult() )
-                sk_decomp = scheme.bit_decomp((scheme.Rq(1), sk[-1], sk[-1] ^ 2))
-                prev_hint = scheme.switch_key_gen(vector(scheme.Rq, sk_decomp.list()), sk)
-                pk[-1]["hint"] = prev_hint
+                sk_decomp = scheme.bit_decomp((scheme.Rq(1), cur_sk[-1], cur_sk[-1] ^ 2))
+                pk[-1]["hint"] = scheme.switch_key_gen(vector(scheme.Rq, sk_decomp.list()), cur_sk)
 
-            pk.append({"pk":pk})
-            sk.append(sk)
+            pk.append({"pk":cur_pk})
+            sk.append(cur_sk)
 
         return pk, sk
 
     def enc(self, pk, m):
-        return self.bases[-1].enc(pk, m)
+        return self.bases[0].enc(pk, m)
 
     # todo: pack the ciphertext and its level
     def dec(self, sk, c, j):
