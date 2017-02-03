@@ -1,8 +1,7 @@
 # coding=utf-8
 from sage.stats.distributions.discrete_gaussian_integer import DiscreteGaussianDistributionIntegerSampler
 
-# Antoine (jeudi 27)
-# je met des commentaires ici parce que apparement facebook aime vraiment pas que je fasse des converse de groupe (elles disparaissent sans laisser de trace à chaque fois)
+# Antoine (jeudi 27)# je met des commentaires ici parce que apparement facebook aime vraiment pas que je fasse des converse de groupe (elles disparaissent sans laisser de trace à chaque fois)
 # A priori l'histoire de la représentation ne devrait plus être génante. Tout est fait normalement,
 # jusqu'au moment du déchiffrement ou on met les coefficients des poly dans la bonne représentation juste avant de faire le modulo 2.
 #
@@ -120,7 +119,7 @@ class BasicScheme:
             
         def decomp_one(poly):
             ret = [[]] * self.mu
-            print poly.list()
+            #print poly.list()
             for coeff in poly.list():
                 coeff = int(coeff)
                 for i in xrange(self.mu):
@@ -131,16 +130,16 @@ class BasicScheme:
         
         # the matrix has the elements we want in the right place.
         # we convert it to a big vector of all columns concatenated.
-        return vector(sum(map(list, matrix(map(decomp_one, x)).columns()), []))
+        return vector(self.R2, sum(map(list, matrix(map(decomp_one, x)).columns()), []))
 
     def powers_of_2(self, x):
         # type: (self.Rq^len(x)) -> self.Rq^(len(x)*self.q.bit_length())
         """
         :returns the mu powers of 2 of an Rq^n vector, as a Rq^(n*mu) vector
         """
-        return vector([x[i] * 2 ^ j for j in xrange(self.mu) for i in xrange(len(x))])
+        return vector([self.Rq(x[i].list()) * 2 ^ j for j in xrange(self.mu) for i in xrange(len(x))])
 
-    # important: sk2 has to be a 'canonical' dimension 2 key = [1,s']
+    # important: sk2 has to be a 'canonical' dimension 2 key = [1,s'] and must be in self.Rq
     def switch_key_gen(self, sk1, sk2):
         # type: (self.Rq^len(sk1), self.Rq^2) -> matrix(self.Rq, len(sk1)*self.q.bit_length(), 2)
         """
@@ -149,16 +148,16 @@ class BasicScheme:
         sk2 however MUST not be modified (ie. sk2 = private_key_gen())
         """
         hint = self.public_key_gen(sk2, len(sk1) * self.mu)
-        hint[:, 0] += self.powers_of_2(sk1)
+        hint[:, 0] = hint.column(0) + self.powers_of_2(sk1)
         return hint
 
     def switch_key(self, c, hint):
         # type: (self.Rq^len(c), matrix(self.Rq, len(c)*self.q.bit_length(), hint.ncols())) -> self.Rq^hint.ncols()
-        return  self.bit_decomp(c).transpose()*hint
+        return  self.bit_decomp(c)*hint
 
 
 # TODO: check this
-def scale(x, q, p, r=2):
+def scale(x, q, p):
     """
     Scale a vector while preserving mod-r congruency
     :param x: the mod q vector to be scaled
@@ -172,8 +171,12 @@ def scale(x, q, p, r=2):
     for poly in x:
         scaled_poly = []
         for coef in poly.list():
-            scaled = coef*scale
-            scaled_poly.append(scaled - scaled%r + coef%r)
+            coef = Integer(coef)
+            scaled = floor(coef*scale)
+            if scaled%2 != coef%2:
+                scaled +=1
+                
+            scaled_poly.append(scaled)
 
         ret.append(poly.parent()(scaled_poly))
 
@@ -181,13 +184,14 @@ def scale(x, q, p, r=2):
 
 
 
+
 class FHE:
     def __init__(self, _lambda, L):
         mu = round(log(L) + log(_lambda))
         self.L = L
-        self.bases = []
-        for j in reversed(xrange(L+1)):
-            self.bases.append(BasicScheme(_lambda, mu * (j + 1)))
+        self.bases = [None]*(L+1)
+        for j in xrange(len(self.bases)):
+            self.bases[j] = BasicScheme(_lambda, mu * (j + 1))
 
     def key_gen(self):
         """
@@ -196,28 +200,28 @@ class FHE:
         hint_j allow to switch from the (modified) sk_j to the (original) sk_{j-1}
         :returns: [ {"pk": pk_j, "hint": hint_j} ], [ sk_j ]
         """
-        pk = []
-        sk = []
+        pk = [None]*len(self.bases)
+        sk = [None]*len(self.bases)
         for j in reversed(xrange(len(self.bases))):
             scheme = self.bases[j]
-
+            print j
             cur_sk = scheme.secret_key_gen()
-            cur_pk = scheme.public_key_gen(cur_sk)
-
+            cur_pk = { "pk": scheme.public_key_gen(cur_sk) }
+            
             if j != self.L:
                 # note : we don't use exactly the tensor product sk * sk, because with RLWE instantiation we know that
                 # sk is of dimension 2. Therefore, we can remove the redundant coef (= sk) and set the multiplied
                 # ciphertext vector accordingly (see mult() )
-                sk_decomp = scheme.bit_decomp((scheme.Rq(1), cur_sk[-1], cur_sk[-1] ^ 2))
-                pk[-1]["hint"] = scheme.switch_key_gen(vector(scheme.Rq, sk_decomp.list()), cur_sk)
+                sk_decomp = self.bases[j+1].bit_decomp((self.bases[j+1].Rq(1), sk[j+1][1], sk[j+1][1] ^ 2))
+                cur_pk["hint"] = scheme.switch_key_gen(sk_decomp, cur_sk)
 
-            pk.append({"pk":cur_pk})
-            sk.append(cur_sk)
+            pk[j] = cur_pk
+            sk[j] = cur_sk
 
         return pk, sk
 
     def enc(self, pk, m):
-        return self.bases[0].enc(pk, m)
+        return self.bases[self.L].enc(pk[self.L]["pk"], m)
 
     # todo: pack the ciphertext and its level
     def dec(self, sk, c, j):
@@ -240,6 +244,26 @@ class FHE:
         return c3
 
 
-
-
-
+def test(_lambda, L, n=20):
+    for _ in xrange(n):
+        F=FHE(5,L)
+        pk, sk = F.key_gen()
+        mo = F.bases[L].R2.random_element()
+        c = F.enc(pk, mo)
+        m = F.dec(sk, c, L)
+        if m != mo:
+            return False
+    return True
+"""
+L = 5
+F=FHE(5,L)
+pk, sk = F.key_gen()
+m1 = F.bases[L].R2.random_element()
+m2 = F.bases[L].R2.random_element()
+c1 = F.enc(pk, m1)
+c2 = F.enc(pk, m2)
+c12 = F.add(pk, c1, c2, L)
+m = F.dec(pk, c12, L-1)
+m12 = m1+m2
+print m12 == m
+"""
