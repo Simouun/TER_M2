@@ -25,6 +25,11 @@ def Rq(d, q):
     Pq.<x> = PolynomialRing(GF(q))
     return Pq.quotient(x^d + 1)
 
+def center_repr(coeff, q):
+    coeff = int(coeff)
+    if coeff < q / 2:
+        return coeff
+    return coeff - q
 
 class BasicScheme:
     def __init__(self, _lambda, mu):
@@ -55,9 +60,6 @@ class BasicScheme:
         d = DiscreteGaussianDistributionIntegerSampler(3.2, 0)  # , floor(self.q/(2*sigma)) )
         return self.Rq([d() for _ in xrange(self.d)])
 
-    def to_Rq_vector(self, vect):
-        return vector(self.Rq, map(lambda x: x.list(), vect))
-
     def secret_key_gen(self):
         return vector(self.Rq, [1, self.X()])
 
@@ -84,12 +86,8 @@ class BasicScheme:
 
     def dec(self, sk, c):
         # type: (self.Rq^2, self.Rq^2) -> self.R2
-        def center_repr(coeff):
-            if int(coeff) < self.q / 2:
-                return int(coeff)
-            return int(coeff) - self.q
 
-        return self.R2(map(center_repr, c.dot_product(sk).list()))
+        return self.R2(map(self.center_repr, c.dot_product(sk).list()))
 
     def bit_decomp(self, x):
         # type: (self.Rq^len(x)) -> self.R2^(len(x)*self.q.bit_length())
@@ -122,18 +120,18 @@ class BasicScheme:
             return map(self.Rq, ret)
 
         def decomp_one(poly):
-            ret = [[]] * self.mu
+            ret = [ [] for _ in xrange(self.mu) ]
             for coeff in poly.list():
-                coeff = int(coeff)
+                coeff = Integer(coeff)
                 for i in xrange(self.mu):
-                    ret[i].append(coeff % 2**i)
+                    ret[i].append(coeff % 2)
                     coeff >>= 1
 
-            return map(self.R2, ret)
+            return map(self.Rq, ret)
 
         # the matrix has the elements we want in the right place.
         # we convert it to a big vector of all columns concatenated.
-        return vector(self.R2, sum(map(list, matrix(map(decomp_one, x)).columns()), []))
+        return vector(self.Rq, sum(map(list, matrix(map(decomp_one, x)).columns()), []))
 
     def powers_of_2(self, x):
         # type: (self.Rq^len(x)) -> self.Rq^(len(x)*self.q.bit_length())
@@ -155,24 +153,24 @@ class BasicScheme:
         return hint
 
     def switch_key(self, c, hint):
-        # type: (self.Rq^len(c), matrix(self.Rq, len(c)*self.q.bit_length(), hint.ncols())) -> self.Rq^hint.ncols()
-        decomp = vector(self.Rq, map(lambda x: x.list(), self.bit_decomp(c))) #  bit_decomp as an Rq vector
-        return  decomp*hint
+        # type: (self.Rq^len(c), matrix(self.Rq, len(c)*self.q.bit_length(), 2)) -> self.Rq^2
+        return   self.bit_decomp(c)*hint
 
 
     def scale(self, x):
         """
         Scale a vector while preserving mod-2 congruency
-        The elements are scaled from their modulus to self.q modulus
+        The elements are scaled from their modulus (p) to q modulus
         :param x: the mod p vector to be scaled
-        :returns: the closest to x, mod-self.q vector, congruent to x mod 2
+        :returns: the closest to x, mod-q vector, congruent to x mod 2
         """
-        scale = self.q / x.base_ring().characteristic()
+        p = x.base_ring().characteristic()
+        scale = self.q / p
         ret = []
         for poly in x:
             scaled_poly = []
             for coef in poly.list():
-                coef = Integer(coef)
+                coef = center_repr(coef, p)
                 scaled = floor(coef*scale)
                 if scaled%2 != coef%2:
                     scaled +=1
@@ -184,11 +182,13 @@ class BasicScheme:
         return vector(ret)
 
 
+    def center_repr(self, coeff):
+        return center_repr(coeff, self.q)
 
 
 class FHE:
     def __init__(self, _lambda, L):
-        mu = 5*round(log(L) + log(_lambda))
+        mu = 2*round(log(L) + log(_lambda))
         self.L = L
         self.bases = [None]*(L+1)
         for j in xrange(len(self.bases)):
@@ -258,8 +258,10 @@ def test(_lambda, L, n=20):
             return False
     return True
 
+#todo: foutre ça dans les tests et réorganiser
+
 L = 4
-F=FHE(5,L)
+F = FHE(5, L)
 pk, sk = F.key_gen()
 m1 = F.bases[L].R2.random_element()
 m2 = F.bases[L].R2.random_element()
@@ -267,11 +269,29 @@ c1 = F.enc(pk, m1)
 c2 = F.enc(pk, m2)
 # opertaions works without refresh
 assert m1 == F.dec(sk, c1, L) and m2 == F.dec(sk, c2, L)
-assert m1*m2==F.bases[L].dec(vector([1,sk[L][1],sk[L][1]^2]), vector([c1[0]*c2[0], c1[0]*c2[1] + c1[1]*c2[0], c1[1]*c2[1]]))
-assert m1+m2==F.dec(sk, c1+c2, L)
-assert m1 == F.dec(sk, F.refresh(pk, [c1[0],c2[1], 0], L), L-1 )
-c12 = F.add(pk, c1, c2, L)
-m = F.dec(sk, c12, L-1)
-m12 = m1+m2
-print m12 == m
+assert m1 * m2 == F.bases[L].dec(vector([1, sk[L][1], sk[L][1] ^ 2]),
+                                 vector([c1[0] * c2[0], c1[0] * c2[1] + c1[1] * c2[0], c1[1] * c2[1]]))
+assert m1 + m2 == F.dec(sk, c1 + c2, L)
 
+scaled = F.bases[L - 1].scale(c1) #scale works
+target_sk = vector(F.bases[L - 1].Rq, map(lambda x: map(F.bases[L].center_repr, x.list()), sk[L]))
+assert m1 == F.bases[L - 1].dec(target_sk, scaled)
+
+#decomp works
+assert F.bases[L].bit_decomp(c1).dot_product(F.bases[L].powers_of_2(sk[L])) == c1.dot_product(sk[L])
+
+S=BasicScheme(5,15)
+sk1 = S.secret_key_gen()
+pk1 = S.public_key_gen(sk1)
+sk2 = S.secret_key_gen()
+mo = S.R2.random_element()
+c = S.enc(pk1, mo)
+cc = S.switch_key(c, S.switch_key_gen(sk1,sk2))
+assert mo == S.dec(sk2, cc)
+
+refreshed = F.refresh(pk, [c1[0], c2[1], 0], L)
+assert m1 == F.dec(sk, refreshed, L - 1)
+c12 = F.add(pk, c1, c2, L)
+m = F.dec(sk, c12, L - 1)
+m12 = m1 + m2
+print m12 == m
