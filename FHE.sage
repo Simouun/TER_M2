@@ -32,32 +32,36 @@ def center_repr(coeff, q):
     return coeff - q
 
 class BasicScheme:
-    def __init__(self, _lambda, mu):
+    def __init__(self, dim, mu):
         """
         represents one instance of the basic cryptosystem
-        :param _lambda: security parameter
         :param mu: modulus size (in bits)
+        :param dim: is the ring dimension, should be big enough to guarantee 2^lambda security
         self.q is the modulus
-        self.d the ring dimension
         self.Rn is the ring of polynomials with coefficients in Z/nZ modulo f=x^d+1
         self.N is the size parameter (?)
+        dim is given instead of lambda because it needs to be consistent with the whole cryptosystem
+        Note: dim is sufficient to parametrize security for the basic scheme, assuming that mu is correctly set
         """
+        print "Init BasicScheme from dim="+str(dim)+", mu="+str(mu)+" ..."
         self.mu = mu
-        
-
-        self.q = random_prime(2^self.mu - 1, lbound=2^(self.mu - 1))
+        self.q = random_prime(2^mu - 1, lbound=2^(mu - 1))
         self.N = ceil(3*log2(self.q)) # N = ceil((2*n + 1)*log(q)), n=1 for RLWE
-        self.d = 2^_lambda
-        self.R2 = Rq(self.d, 2)
-        self.Rq = Rq(self.d, self.q)
 
-    def X(self):
-        """
-        noise generator, from gaussian distribution
-        :return: random Rq element, with (infinite) norm lower that q/2
-        """
-        d = DiscreteGaussianDistributionIntegerSampler(3.2, 0)  # , floor(self.q/(2*sigma)) )
-        return self.Rq([d() for _ in xrange(self.d)])
+        # we keep R2 reference for convenience
+        self.R2 = Rq(dim, 2)
+        # /!\ sage takes quite some time computing this one when dim and q are both big
+        self.Rq = Rq(dim, self.q)
+
+        distribution = DiscreteGaussianDistributionIntegerSampler(3.2, 0)  # , floor(self.q/(2*sigma)) )
+        def X():
+            """
+            noise generator, from gaussian distribution
+            :return: random Rq element, with (infinite) norm lower that q/2
+            """
+            return self.Rq([distribution() for _ in xrange(dim)])
+        self.X = X
+
 
     def secret_key_gen(self):
         return vector(self.Rq, [1, self.X()])
@@ -162,34 +166,44 @@ class BasicScheme:
     def center_repr(self, coeff):
         return center_repr(coeff, self.q)
 
+    def __str__(self):
+        return "Basic Sheme with modulus "+str(self.q)+" (size "+str(self.mu)+"), N is "+str(self.N)+", dimension is "+str(self.Rq.modulus().degree())
+
 
 class FHE:
     def __init__(self, _lambda, L):
-        mu = 2*round(log2(L) + log2(_lambda))
+        mu = floor(log2(L) + log2(_lambda))
         self.L = L
-        self.bases = [None]*(L+1)
-        for j in xrange(len(self.bases)):
-            self.bases[j] = BasicScheme(_lambda, mu * (j + 1))
+        # we store d because we may need it later on
+        self.d = 2^floor(log2(mu*L*_lambda)) # dim = 2^x ~= mu*L*lambda
+        # Simple way to path things: skip the first step
+        # If this works, it may be a good solution, because increasing the step is soooo costly
+        self.bases = [ BasicScheme(self.d, mu * (j + 2)) for j in xrange(L+1) ]
+
 
     def key_gen(self):
         """
         Generate the public and privates keys, as two arrays of BasicScheme's public and private keys,
         plus the key switching hints.
         hint_j allow to switch from the (modified) sk_j to the (original) sk_{j-1}
-        :returns: [ {"pk": pk_j, "hint": hint_j} ], [ sk_j ]
+        :returns: [ {"pk": pk_j, "hint": hint_j} ],  sk_j ]
         """
         pk = [None]*len(self.bases)
         sk = [None]*len(self.bases)
         for j in reversed(xrange(len(self.bases))):
             scheme = self.bases[j]
-            print j
+            print scheme
+            print "Generating keys..."
+            print "    private"
             cur_sk = scheme.secret_key_gen()
+            print "    public"
             cur_pk = { "pk": scheme.public_key_gen(cur_sk) }
             
             if j != self.L:
                 # note : we don't use exactly the tensor product sk * sk, because with RLWE instantiation we know that
                 # sk is of dimension 2. Therefore, we can remove the redundant coef (= sk) and set the multiplied
                 # ciphertext vector accordingly (see add() and mult() )
+                print "    hint"
                 sk_decomp = self.bases[j+1].bit_decomp((sk[j+1][0], sk[j+1][1], sk[j+1][1] ^ 2))
                 cur_pk["hint"] = scheme.switch_key_gen(sk_decomp, cur_sk)
 
@@ -230,21 +244,29 @@ class FHE:
 
 #todo: foutre ça dans les tests et réorganiser
 
+"""
 L = 4
 F = FHE(5, L)
-pk, sk = F.key_gen()
-m1 = F.bases[L].R2.random_element()
-m2 = F.bases[L].R2.random_element()
-c1 = F.enc(pk, m1)
-c2 = F.enc(pk, m2)
 
-assert m1 == F.dec(sk, F.enc(pk, m1, 0), 0)
 
-"""
+for S in F.bases:
+    print S
+
+
+
+
 cur_c = c1
 cur_level = L
 while cur_level != -1:
     assert m1 == F.dec(sk, cur_c, cur_level)
     cur_c = F.refresh(pk, cur_c, cur_level)
     cur_level -= 1
+
+
+pk, sk = F.key_gen()
+m1 = F.bases[L].R2.random_element()
+m2 = F.bases[L].R2.random_element()
+c1 = F.enc(pk, m1)
+c2 = F.enc(pk, m2)
+assert m1 == F.dec(sk, F.enc(pk, m1, 0), 0)
 """
