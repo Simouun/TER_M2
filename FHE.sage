@@ -247,7 +247,7 @@ class FHE:
 #todo: foutre ça dans les tests et réorganiser
 
 
-
+"""
 L = 4
 F = FHE(5, L)
 
@@ -270,3 +270,4 @@ while cur_level != 0:
     cur_c = F.refresh(pk, cur_c, cur_level)
     cur_level -= 1
     assert m1 == F.dec(sk, cur_c, cur_level)
+"""
