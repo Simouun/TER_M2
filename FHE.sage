@@ -53,11 +53,13 @@ class BasicScheme:
         # /!\ sage takes quite some time computing this one when dim and q are both big
         self.Rq = Rq(dim, self.q)
 
-        distribution = DiscreteGaussianDistributionIntegerSampler(3.2, 0)  # , floor(self.q/(2*sigma)) )
+        bound = self.q/(2*self.N*(dim+1))
+        tau=5
+        distribution = DiscreteGaussianDistributionIntegerSampler(bound/tau, 0 , tau) # sigma*tau=bound
         def X():
             """
             noise generator, from gaussian distribution
-            :return: random Rq element, with (infinite) norm lower that q/2
+            :return: random Rq element, with (infinite) norm lower that bound
             """
             return self.Rq([distribution() for _ in xrange(dim)])
         self.X = X
@@ -244,7 +246,8 @@ class FHE:
 
 #todo: foutre ça dans les tests et réorganiser
 
-"""
+
+
 L = 4
 F = FHE(5, L)
 
@@ -253,20 +256,17 @@ for S in F.bases:
     print S
 
 
-
-
-cur_c = c1
-cur_level = L
-while cur_level != -1:
-    assert m1 == F.dec(sk, cur_c, cur_level)
-    cur_c = F.refresh(pk, cur_c, cur_level)
-    cur_level -= 1
-
-
 pk, sk = F.key_gen()
 m1 = F.bases[L].R2.random_element()
 m2 = F.bases[L].R2.random_element()
 c1 = F.enc(pk, m1)
 c2 = F.enc(pk, m2)
 assert m1 == F.dec(sk, F.enc(pk, m1, 0), 0)
-"""
+
+cur_c = c1
+cur_level = L
+assert m1 == F.dec(sk, cur_c, cur_level)
+while cur_level != 0:
+    cur_c = F.refresh(pk, cur_c, cur_level)
+    cur_level -= 1
+    assert m1 == F.dec(sk, cur_c, cur_level)
