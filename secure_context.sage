@@ -41,9 +41,9 @@ def cipher_class_factory(scheme, pk):
     # TODO: store each known cipher data for a given level, and make some optimisations
     class CipherText:
 
-        def __init__(self, plaintext):
-            self.cipher = scheme.enc(pk, plaintext)
-            self.level = scheme.L
+        def __init__(self, plaintext, level=scheme.L):
+            self.cipher = scheme.enc(pk, plaintext, level)
+            self.level = level
 
         def decrypt(self, sk):
             return scheme.dec(sk, self.cipher, self.level)
@@ -55,6 +55,7 @@ def cipher_class_factory(scheme, pk):
                 other = copy(other).refresh(other.level - self.level)
 
             self.cipher = scheme.add(pk, self.cipher, other.cipher, self.level)
+            self.level -=1
 
         def __add__(self, other):
             # small optimisation to make less copies
@@ -69,6 +70,7 @@ def cipher_class_factory(scheme, pk):
                 other = copy(other).refresh(other.level - self.level)
 
             self.cipher = scheme.mult(pk, self.cipher, other.cipher, self.level)
+            self.level -= 1
 
         def __mul__(self, other):
             (new, o) = (copy(self), other) if self.level >= other.level else (copy(other), self)  # same
@@ -89,3 +91,16 @@ def cipher_class_factory(scheme, pk):
             return self
 
     return CipherText
+
+
+"""
+SC = SecuredContext(10, 4)
+m1 = SC.PlainText.random_element()
+m2 = SC.PlainText.random_element()
+c1 = SC.CipherText(m1)
+c2 = SC.CipherText(m2)
+
+assert (c1*c2).decrypt(SC.sk) == m1*m2
+assert (c1+c2).decrypt(SC.sk) == m1+m2
+
+"""
