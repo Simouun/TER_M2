@@ -83,7 +83,7 @@ def cipher_class_factory(scheme, pk):
             :return: the refreshed ciphertext, for chaining
             """
             if self.level < n:
-                raise ArithmeticError("Can't refresh " + str(n) +" times a level " + str(self.level) + " cipher")
+                raise ArithmeticError("Can't refresh " + str(n) + " times a level " + str(self.level) + " cipher")
             for _ in xrange(n):
                 self.cipher = scheme.refresh(pk, self.cipher, self.level)
                 self.level -= 1
@@ -91,7 +91,6 @@ def cipher_class_factory(scheme, pk):
             return self
 
     return CipherText
-
 
 """
 SC = SecuredContext(10, 4)
@@ -102,5 +101,4 @@ c2 = SC.CipherText(m2)
 
 assert (c1*c2).decrypt(SC.sk) == m1*m2
 assert (c1+c2).decrypt(SC.sk) == m1+m2
-
 """

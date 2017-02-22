@@ -53,9 +53,10 @@ class BasicScheme:
         # /!\ sage takes quite some time computing this one when dim and q are both big
         self.Rq = Rq(dim, self.q)
 
-        bound = self.q/(2*self.N*(dim+1))
-        tau=5
+        bound = sqrt(self.q/(8*self.N^2*dim^3))
+        tau=3
         distribution = DiscreteGaussianDistributionIntegerSampler(bound/tau, 0 , tau) # sigma*tau=bound
+        print float(bound/tau)
         def X():
             """
             noise generator, from gaussian distribution
@@ -246,14 +247,9 @@ class FHE:
 
 #todo: foutre ça dans les tests et réorganiser
 
-
 """
 L = 4
 F = FHE(5, L)
-
-
-for S in F.bases:
-    print S
 
 
 pk, sk = F.key_gen()
@@ -263,11 +259,10 @@ c1 = F.enc(pk, m1)
 c2 = F.enc(pk, m2)
 assert m1 == F.dec(sk, F.enc(pk, m1, 0), 0)
 
-cur_c = c1
-cur_level = L
-assert m1 == F.dec(sk, cur_c, cur_level)
-while cur_level != 0:
-    cur_c = F.refresh(pk, cur_c, cur_level)
-    cur_level -= 1
-    assert m1 == F.dec(sk, cur_c, cur_level)
+
+# homomorphic addition works (with refresh)
+assert m1+m2 == F.dec(sk, F.add(pk, c1, c2, L), L-1)
+
+# homomorphic multiplication works (with refresh)
+assert m1*m2 == F.dec(sk, F.mult(pk, c1, c2, L), L-1)
 """
