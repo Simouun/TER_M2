@@ -4,7 +4,8 @@ reset()
 # Séparation de l'implémentation et des tests
 load("secure_context.sage")
 
-S=BasicScheme(5,15)
+"""
+S=BasicScheme(2^7,15)
 sk1 = S.secret_key_gen()
 pk1 = S.public_key_gen(sk1)
 sk2 = S.secret_key_gen()
@@ -14,7 +15,7 @@ c2 = S.switch_key(c, S.switch_key_gen(sk1,sk2))
 
 assert mo == S.dec(sk1, c)
 assert mo == S.dec(sk2, c2)
-
+"""
 
 L = 4
 F = FHE(5, L)
@@ -37,9 +38,10 @@ scaled = F.bases[L - 1].scale(c1)
 target_sk = vector(F.bases[L - 1].Rq, map(lambda x: map(F.bases[L].center_repr, x.list()), sk[L]))
 assert m1 == F.bases[L - 1].dec(target_sk, scaled)
 
-#decomposition is compatible with scalar product
+# decomposition is compatible with scalar product
 assert F.bases[L].bit_decomp(c1).dot_product(F.bases[L].powers_of_2(sk[L])) == c1.dot_product(sk[L])
 
+"""
 # simple key switching
 S=BasicScheme(5,15)
 sk1 = S.secret_key_gen()
@@ -49,7 +51,7 @@ mo = S.R2.random_element()
 c = S.enc(pk1, mo)
 cc = S.switch_key(c, S.switch_key_gen(sk1,sk2))
 assert mo == S.dec(sk2, cc)
-
+"""
 
 refreshed = F.refresh(pk, [c1[0], c1[1], 0], L)
 assert m1 == F.dec(sk, refreshed, L - 1)

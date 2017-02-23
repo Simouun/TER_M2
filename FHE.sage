@@ -32,6 +32,8 @@ def center_repr(coeff, q):
     return coeff - q
 
 class BasicScheme:
+    opti=False
+    
     def __init__(self, dim, mu):
         """
         represents one instance of the basic cryptosystem
@@ -53,7 +55,8 @@ class BasicScheme:
         # /!\ sage takes quite some time computing this one when dim and q are both big
         self.Rq = Rq(dim, self.q)
 
-        bound = sqrt(self.q/(8*self.N^2*dim^3))
+        bound = sqrt(self.q/(4*self.N^2*dim^3))
+        bound = 9
         tau=3
         distribution = DiscreteGaussianDistributionIntegerSampler(bound/tau, 0 , tau) # sigma*tau=bound
         print float(bound/tau)
@@ -64,6 +67,7 @@ class BasicScheme:
             """
             return self.Rq([distribution() for _ in xrange(dim)])
         self.X = X
+        self.decomp_len = ceil(log2(bound)) if BasicScheme.opti else self.mu
 
 
     def secret_key_gen(self):
@@ -104,10 +108,10 @@ class BasicScheme:
         """
         
         def decomp_one(poly):
-            ret = [ [] for _ in xrange(self.mu) ]
+            ret = [ [] for _ in xrange(self.decomp_len) ]
             for coeff in poly.list():
                 coeff = Integer(coeff)
-                for i in xrange(self.mu):
+                for i in xrange(self.decomp_len):
                     ret[i].append(coeff % 2)
                     coeff >>= 1
 
@@ -122,7 +126,7 @@ class BasicScheme:
         """
         :returns the mu powers of 2 of an Rq^n vector, as a Rq^(n*mu) vector
         """
-        return vector([self.Rq(x[i].list()) * 2 ^ j for j in xrange(self.mu) for i in xrange(len(x))])
+        return vector([self.Rq(x[i].list()) * 2 ^ j for j in xrange(self.decomp_len) for i in xrange(len(x))])
 
     # important: sk2 has to be a 'canonical' dimension 2 key = [1,s'] and must be in self.Rq
     def switch_key_gen(self, sk1, sk2):
@@ -132,7 +136,7 @@ class BasicScheme:
         Here the sk1 may not directly come from private_key_gen(), ie. sk1 = sk' tensor sk'
         sk2 however MUST not be modified (ie. sk2 = private_key_gen())
         """
-        hint = self.public_key_gen(sk2, len(sk1) * self.mu)
+        hint = self.public_key_gen(sk2, len(sk1) * self.decomp_len)
         hint[:, 0] = hint.column(0) + self.powers_of_2(sk1)
         return hint
 
@@ -248,21 +252,17 @@ class FHE:
 #todo: foutre ça dans les tests et réorganiser
 
 """
-L = 4
-F = FHE(5, L)
+L = 6
+F = FHE(10, L)
 
 
 pk, sk = F.key_gen()
-m1 = F.bases[L].R2.random_element()
-m2 = F.bases[L].R2.random_element()
-c1 = F.enc(pk, m1)
-c2 = F.enc(pk, m2)
-assert m1 == F.dec(sk, F.enc(pk, m1, 0), 0)
+m = F.bases[L].R2.random_element()
+c = F.enc(pk, m)
 
 
-# homomorphic addition works (with refresh)
-assert m1+m2 == F.dec(sk, F.add(pk, c1, c2, L), L-1)
+for i in range(L,1):
+    assert m == F.dec(sk, c, i)
+    c = F.refresh(pk, c, i)
 
-# homomorphic multiplication works (with refresh)
-assert m1*m2 == F.dec(sk, F.mult(pk, c1, c2, L), L-1)
 """
