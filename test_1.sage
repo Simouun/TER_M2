@@ -42,8 +42,21 @@ def testOP(F, pk=None, sk=None):
     print "  homomorphic multiplication (with refresh)..."
     assert m1*m2 == F.dec(sk, F.mult(pk, c1, c2, L), L-1)
 
+def testRefresh(F, pk=None, sk=None):
+    if pk is None or sk is None:
+        pk, sk = F.key_gen()
+    L = len(F.bases) - 1
+    m = F.bases[L].R2.random_element()
+    c = F.enc(pk, m)
 
-def testleveledMult(F, pk=None, sk=None):
+    for i in reversed(range(1, L + 1)):
+        print "level " + str(i)
+
+        assert m == F.dec(sk, c, i)
+        c = F.refresh(pk, c, i)
+
+
+def testLeveledMult(F, pk=None, sk=None):
     if pk is None or sk is None:
         pk, sk = F.key_gen()
     L = len(F.bases) - 1
@@ -101,3 +114,5 @@ print "testMaxMult() checks that the biggest multiplication possible with L leve
       " It generates 2^L ciphertexts and multiply them two by two (thus obtaining 2^(L-1) level L-1 ciphertexts) " \
       " recursively until we reach level 0. Decryption validity is checked at each level." \
       " An additional parameter d can be given to limit testing to d levels, which is a lot quicker."
+print ""
+print 'Type "F=FHE(10, 5); pk, sk = F.key_gen()" for basic setup.'

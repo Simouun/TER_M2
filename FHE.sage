@@ -64,19 +64,12 @@ class BasicScheme:
             noise generator, from gaussian distribution
             :return: random Rq element, with (infinite) norm lower that bound
             """
-            poly = [distribution() for _ in xrange(dim)]
-            return self.Rq(poly)
-            n = sum(map(lambda coef: int(bool(coef)), poly))
-            if n != 0:
-                print str(n)+" coefs != 0"
-            return self.Rq(poly)
+            return self.Rq([distribution() for _ in xrange(dim)])
         self.X = X
 
 
     def secret_key_gen(self):
-        v= vector(self.Rq, [1, self.X()])
-        print "method "+str(v)
-        return v
+        return vector(self.Rq, [1, self.X()])
 
     # key_size can be specified for key switch setup, otherwise, the scheme's parameter is used
     def public_key_gen(self, sk, key_size=None):
@@ -217,7 +210,6 @@ class FHE:
             print "Generating keys..."
             print "    private"
             cur_sk = scheme.secret_key_gen()
-            print "    cur= "+str(cur_sk)
             print "    public"
             cur_pk = { "pk": scheme.public_key_gen(cur_sk) }
             
