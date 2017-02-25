@@ -2,7 +2,7 @@
 reset()
 
 # Séparation de l'implémentation et des tests
-load("secure_context.sage")
+load("FHE.sage")
 
 from time import time
 
