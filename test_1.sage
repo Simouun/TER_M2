@@ -61,7 +61,7 @@ def testLeveledMult(F, pk=None, sk=None):
         pk, sk = F.key_gen()
     L = len(F.bases) - 1
 
-    for i in reversed(range(1, L+1)):
+    for i in reversed(range(2, L+1)):
         print "level " + str(i)
         m1 = F.bases[L].R2.random_element()
         c1 = F.enc(pk, m1, i)
